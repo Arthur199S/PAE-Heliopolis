@@ -34,7 +34,7 @@ New-Item -ItemType Directory -Force -Path $PY_DIR   | Out-Null
 # 2. Baixa Python Embeddable
 if (-not (Test-Path $PY_ZIP_FILE)) {
     Write-Host "[1/5] Baixando Python $PY_VERSION Embeddable..." -ForegroundColor Yellow
-    Invoke-WebRequest -Uri $PY_URL -OutFile $PY_ZIP_FILE -UseBasicParsing
+    Invoke-WebRequest -Uri $PY_ZIP_URL -OutFile $PY_ZIP_FILE -UseBasicParsing
 } else {
     Write-Host "[1/5] Python Embeddable já baixado." -ForegroundColor Green
 }
