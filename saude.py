@@ -83,15 +83,19 @@ def _comparar(n, quente, semente=0):
                  "ic_sup_pct": float("nan"), "conclusivo": False}
     if resultado["dias_quentes"] < MINIMO_DIAS_QUENTES or resultado["dias_comparacao"] < MINIMO_DIAS_QUENTES:
         return resultado
-    # Esperado = média das internações dos dias NÃO quentes com o mesmo ano, mês e dia da semana.
-    # Os dias quentes ficam de fora dessa média para que ela não "puxe" o esperado para perto deles.
+    # Esperado = média das internações dos dias NÃO quentes com o mesmo mês e dia da semana.
+    # Quando a série é curta (ex.: alguns meses de medição de sensores locais), agrupamos por (mes, dia_semana)
+    # ou usamos o ano caso haja múltiplos anos disponíveis.
+    multiplos_anos = len(n.index.year.unique()) > 1
+    chaves_agrupamento = ["ano", "mes", "dia_semana"] if multiplos_anos else ["mes", "dia_semana"]
+    
     tabela = pd.DataFrame({"n": n, "quente": quente, "ano": n.index.year,
                            "mes": n.index.month, "dia_semana": n.index.dayofweek})
-    referencia = (tabela[~tabela.quente].groupby(["ano", "mes", "dia_semana"]).n
+    referencia = (tabela[~tabela.quente].groupby(chaves_agrupamento).n
                   .agg(esperado="mean", dias_referencia="count"))
-    quentes = tabela[tabela.quente].join(referencia, on=["ano", "mes", "dia_semana"])
-    # Um dia quente sem pelo menos 2 dias de referência no mesmo mês e dia da semana fica de fora.
-    quentes = quentes[(quentes.dias_referencia >= 2) & (quentes.esperado > 0)]
+    quentes = tabela[tabela.quente].join(referencia, on=chaves_agrupamento)
+    # Se houver referência (ao menos 1 dia no mesmo mês e dia da semana), inclui o dia quente
+    quentes = quentes[(quentes.dias_referencia >= 1) & (quentes.esperado > 0)]
     resultado["dias_usados"] = len(quentes)
     if len(quentes) < MINIMO_DIAS_QUENTES:
         return resultado
