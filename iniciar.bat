@@ -27,7 +27,14 @@ if exist "%PYEMBED%" (
     echo [AVISO] Pasta python\ nao encontrada. Usando Python do sistema.
 )
 
-:: Instala dependencias na primeira execucao
+:: Se o Python ja traz as dependencias (pacote do montar_pacote.ps1),
+:: pula a instalacao. Assim o painel abre mesmo sem internet.
+
+if not exist "%BASE%.deps_ok" (
+    "%PYTHON%" -c "import streamlit, pandas, altair, numpy, requests, openpyxl" >nul 2>&1 && echo ok > "%BASE%.deps_ok"
+)
+
+:: Instala dependencias na primeira execucao (so se ainda faltarem)
 
 if not exist "%BASE%.deps_ok" (
     echo.
@@ -51,6 +58,15 @@ echo Aguarde o navegador abrir em http://localhost:8501
 echo.
 echo Para encerrar: Ctrl+C
 echo.
+
+:: Evita a pergunta "Email:" do Streamlit na primeira execucao
+if not exist "%USERPROFILE%\.streamlit\credentials.toml" (
+    if not exist "%USERPROFILE%\.streamlit" mkdir "%USERPROFILE%\.streamlit"
+    > "%USERPROFILE%\.streamlit\credentials.toml" (
+        echo [general]
+        echo email = ""
+    )
+)
 
 "%PYTHON%" -m streamlit run "%BASE%app.py" ^
     --server.headless false ^
