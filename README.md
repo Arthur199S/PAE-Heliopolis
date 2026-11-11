@@ -78,7 +78,7 @@ flowchart TD
   - Vinicius Takashi Nakatsui — RA: 23.01037-0
 - **Vídeo de Demonstração e Apresentação:** [Link do vídeo: a ser adicionado após a gravação](#)
 - **Repositório GitHub:** [https://github.com/enzogrando/PAE-Heliopolis](https://github.com/enzogrando/PAE-Heliopolis)
-- **Pacote para Windows (Releases):** [Baixar na aba de Releases](https://github.com/enzogrando/PAE-Heliopolis/releases)
+- **Pacote para Windows (Releases):** [Baixar heliopolis_app.zip (versão mais recente)](https://github.com/enzogrando/PAE-Heliopolis/releases/latest/download/heliopolis_app.zip) · [ver todas as versões](https://github.com/enzogrando/PAE-Heliopolis/releases)
 
 ---
 
@@ -86,12 +86,11 @@ flowchart TD
 
 O sistema foi empacotado para rodar no Windows sem instalar o Python e sem usar o terminal. O pacote é uma pasta compactada (`heliopolis_app.zip`) que já traz o Python dentro dela e um arquivo `iniciar.bat` que abre o painel.
 
-1. Acesse a aba de **[Releases](https://github.com/enzogrando/PAE-Heliopolis/releases)** do repositório.
-2. Baixe o arquivo `heliopolis_app.zip` da versão mais recente.
-3. Clique com o botão direito no arquivo e escolha **Extrair tudo**. Não rode o programa de dentro do zip.
-4. Abra a pasta extraída e dê um duplo clique em **`iniciar.bat`**.
-5. Na **primeira vez**, o programa instala as bibliotecas necessárias e precisa de **internet**. Pode demorar alguns minutos.
-6. O painel abre no navegador, no endereço `http://localhost:8501`. Para encerrar, feche a janela preta ou use `Ctrl + C` nela.
+1. Baixe o pacote: **[heliopolis_app.zip (versão mais recente)](https://github.com/enzogrando/PAE-Heliopolis/releases/latest/download/heliopolis_app.zip)** (cerca de 105 MB). Ele também está na aba de **[Releases](https://github.com/enzogrando/PAE-Heliopolis/releases)**.
+2. Clique com o botão direito no arquivo e escolha **Extrair tudo**. Não rode o programa de dentro do zip.
+3. Abra a pasta extraída e dê um duplo clique em **`iniciar.bat`**.
+4. O pacote já traz as bibliotecas necessárias, então **não precisa de internet** para abrir o painel.
+5. O painel abre no navegador, no endereço `http://localhost:8501`. Para encerrar, feche a janela preta ou use `Ctrl + C` nela.
 
 > O Windows pode mostrar o aviso "O Windows protegeu o computador" por ser um programa novo. Clique em **Mais informações** e depois em **Executar assim mesmo**.
 
