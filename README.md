@@ -26,7 +26,7 @@ flowchart TD
     subgraph ANALISE["🔬 3. Processamento Analítico e Estatístico"]
         ETL_CLEAN["dados.limpar_horarios()<br/>• Preenchimento da grade horária UTC<br/>• Verificação de completude mínima (90%)<br/>• Preservação de lacunas sem interpolação"]
         ESTAT_METEO["analise.py<br/>• Cálculo de indicadores diários (máx, média, mín)<br/>• Indicadores noturnos (22h–05h59)<br/>• Detecção de sequências de calor contínuas<br/>• Perfil médio horário e correlação calor-umidade"]
-        ESTAT_SAUDE["saude.py (Cálculo Epidemiológico)<br/>• Comparação com esperado (mesmo mês e dia)<br/>• Estimativa de Intervalo de Confiança de 95%<br/>• Bootstrap com 2.000 repetições<br/>• Distribuição por faixas térmicas"]
+        ESTAT_SAUDE["saude.py (Cálculo Epidemiológico)<br/>• Comparação com esperado (mesmo mês e dia da semana)<br/>• Estimativa de Intervalo de Confiança de 95%<br/>• Bootstrap com 2.000 repetições<br/>• Distribuição por faixas térmicas"]
         INTERP["interpretacao.py<br/>• Textos explicativos dinâmicos em linguagem simples<br/>• Ajuste textual contextual segundo a fonte ativa"]
     end
 
@@ -76,21 +76,24 @@ flowchart TD
   - Lucas Silva — RA: 23.00140-2
   - Pedro Kuba Bloise — RA: 23.00161-5
   - Vinicius Takashi Nakatsui — RA: 23.01037-0
-- **Vídeo de Demonstração e Apresentação:** [Link do Vídeo no YouTube / Drive](https://url-do-video-aqui)
-- **Repositório GitHub:** [https://github.com/seu-usuario/PAE-Heliopolis](https://github.com/seu-usuario/PAE-Heliopolis)
-- **Executável Desktop (Releases):** [Baixar Executável na Aba de Releases](https://github.com/seu-usuario/PAE-Heliopolis/releases)
+- **Vídeo de Demonstração e Apresentação:** [Link do vídeo: a ser adicionado após a gravação](#)
+- **Repositório GitHub:** [https://github.com/enzogrando/PAE-Heliopolis](https://github.com/enzogrando/PAE-Heliopolis)
+- **Pacote para Windows (Releases):** [Baixar na aba de Releases](https://github.com/enzogrando/PAE-Heliopolis/releases)
 
 ---
 
-## 📦 Como Usar o Executável (Para o Pessoal da UNAS — Sem Instalar Python)
+## 📦 Como Usar o Pacote para Windows (Para o Pessoal da UNAS — Sem Instalar Python)
 
-Pensando na facilidade de uso pela equipe e moradores da UNAS, o sistema foi empacotado para execução direta no Windows, dispensando qualquer instalação de Python ou uso de terminal:
+O sistema foi empacotado para rodar no Windows sem instalar o Python e sem usar o terminal. O pacote é uma pasta compactada (`heliopolis_app.zip`) que já traz o Python dentro dela e um arquivo `iniciar.bat` que abre o painel.
 
-1. Acesse a aba de **[Releases](https://github.com/seu-usuario/PAE-Heliopolis/releases)** do repositório.
-2. Baixe o arquivo executável ou o arquivo comprimido (`.zip`) da versão mais recente.
-3. Se estiver em `.zip`, descompacte a pasta no seu computador.
-4. Dê um duplo clique no executável (`PAE-Heliopolis.exe` ou `iniciar_painel.bat`).
-5. O painel abrirá automaticamente na tela do seu navegador padrão.
+1. Acesse a aba de **[Releases](https://github.com/enzogrando/PAE-Heliopolis/releases)** do repositório.
+2. Baixe o arquivo `heliopolis_app.zip` da versão mais recente.
+3. Clique com o botão direito no arquivo e escolha **Extrair tudo**. Não rode o programa de dentro do zip.
+4. Abra a pasta extraída e dê um duplo clique em **`iniciar.bat`**.
+5. Na **primeira vez**, o programa instala as bibliotecas necessárias e precisa de **internet**. Pode demorar alguns minutos.
+6. O painel abre no navegador, no endereço `http://localhost:8501`. Para encerrar, feche a janela preta ou use `Ctrl + C` nela.
+
+> O Windows pode mostrar o aviso "O Windows protegeu o computador" por ser um programa novo. Clique em **Mais informações** e depois em **Executar assim mesmo**.
 
 ---
 
@@ -102,7 +105,8 @@ Este projeto foi construído a partir das visitas presenciais à comunidade e da
    - Adaptação dos textos do painel para que pessoas sem formação técnica em dados ou meteorologia consigam compreender claramente cada métrica e indicador.
    - Inclusão de um **Glossário Completo** e caixas explicativas em cada seção (*"Como ler este gráfico"* e *"O que significam esses números"*).
 2. **Transparência e Limites dos Dados:**
-   - Deixar explícito que os dados meteorológicos são estimativas regionais de reanálise atmosférica (ERA5-Land) e não medições de termômetros locais ou de dentro das moradias.
+   - Deixar explícito que os dados meteorológicos são estimativas regionais de reanálise atmosférica (ERA5, grade de cerca de 25 km, fonte padrão) e não medições de termômetros locais ou de dentro das moradias.
+   - Quando o painel usa os sensores locais da UNAS, os textos avisam que são medições reais, mas de poucos pontos e de um período curto (fev–set/2025).
    - Esclarecer que os dados de internação representam a totalidade do município de São Paulo (SIH/SUS) como parâmetro macro, e não exclusivamente os postos de saúde de Heliópolis.
 3. **Foco em Grupos Vulneráveis:**
    - Criação de filtros etários direcionados (com destaque para a população idosa de **65 anos ou mais**) e recorte das doenças mais impactadas pelo estresse térmico (doenças cardiovasculares e respiratórias).
@@ -112,14 +116,15 @@ Este projeto foi construído a partir das visitas presenciais à comunidade e da
 ## 🚀 Funcionalidades Principais
 
 - **Painel Interativo com Streamlit:** Visualização fluida com gráficos interativos em Altair e indicadores sumarizados em cartões.
+- **Fontes de dados selecionáveis:** ERA5 (padrão), ERA5-Land, ECMWF IFS e previsão recente (Open-Meteo), média dos 5 sensores locais da UNAS ou upload de arquivo próprio (CSV, Excel ou JSON).
 - **Métricas de Calor:**
-  - Limiar térmico de calor ajustável pelo usuário (de 25 °C a 40 °C).
+  - Limiar térmico de calor ajustável pelo usuário (de 20 °C a 40 °C).
   - Identificação de dias quentes e noites quentes (período noturno das 22h às 05h59).
   - Detecção de sequências/ondas de calor contínuas (mínimo de 3 dias consecutivos acima do limiar).
   - Perfil horário médio ao longo das 24 horas e correlação entre temperatura e umidade relativa.
 - **Relação Calor e Saúde Pública (SIH/SUS):**
   - Análise descritiva de internações por **Doenças do coração e circulação** (CID-10 I00–I99) e **Doenças respiratórias** (CID-10 J00–J99).
-  - Comparação com o volume esperado (média de dias não quentes de mesmo ano, mês e dia da semana).
+  - Comparação com o volume esperado (média de dias não quentes do mesmo mês e dia da semana, e do mesmo ano quando a série cobre vários anos).
   - Estimativa de intervalo de confiança de 95% via **Bootstrap (2.000 iterações)**.
   - Distribuição das internações por faixas de temperatura máxima (<20 °C, 20–24 °C, 24–27 °C, 27–30 °C, ≥30 °C).
 - **Controle de Qualidade dos Dados:**
@@ -151,6 +156,9 @@ PAE-Heliopolis/
 ├── assets/                 # Diagramas de arquitetura e imagens de apoio
 ├── dados_saude/            # Base de dados agregada do SIH/SUS e pasta locaisproximos/ (UNAS)
 ├── dados_locais/           # Séries temporais em cache e arquivos gerados pelo CLI
+├── iniciar.bat             # Abre o painel no Windows (usado no pacote da UNAS)
+├── montar_pacote.ps1       # Monta o pacote heliopolis_app.zip com Python embutido
+├── requirements.txt        # Bibliotecas Python necessárias
 ├── exploracao_saude/       # Scripts auxiliares para processamento dos microdados do DATASUS
 ├── documentacao/           # Relatórios técnicos, fluxogramas e comprovações
 └── tests/                  # Testes automatizados unitários
@@ -160,7 +168,7 @@ PAE-Heliopolis/
 
 ## 🛠️ Tecnologias e Bibliotecas
 
-- **Linguagem:** Python 3.10+
+- **Linguagem:** Python 3.10 ou mais novo (o pacote para Windows usa o 3.12)
 - **Interface e Visualização:** [Streamlit](https://streamlit.io/) e [Altair](https://altair-viz.github.io/) / Vega-Lite
 - **Processamento de Dados:** [Pandas](https://pandas.pydata.org/) e [NumPy](https://numpy.org/)
 - **Fontes de Dados:**
@@ -175,7 +183,7 @@ Se você deseja executar o projeto a partir do código-fonte:
 
 ### 1. Clonar o repositório
 ```bash
-git clone https://github.com/seu-usuario/PAE-Heliopolis.git
+git clone https://github.com/enzogrando/PAE-Heliopolis.git
 cd PAE-Heliopolis
 ```
 
@@ -199,7 +207,7 @@ pip install -r requirements.txt
 ```bash
 python -m streamlit run app.py
 ```
-O Streamlit abrirá uma janela no navegador pelo endereço `http://localhost:8501`.
+No Windows, se `python` não for reconhecido, use `py -m streamlit run app.py`. O Streamlit abrirá uma janela no navegador pelo endereço `http://localhost:8501`.
 
 ### 5. Executar via Terminal (CLI)
 Para gerar as tabelas em CSV e o relatório textual sem abrir a interface web:
@@ -229,7 +237,7 @@ pytest tests/
 - **Requisitos Funcionais (RF):**
   - **RF01:** Ingestão de dados meteorológicos via JSON local ou requisição à API Open-Meteo.
   - **RF02:** Validação de grade horária, fuso de São Paulo e preservação explícita de lacunas.
-  - **RF03:** Filtros temporais (2021–2025) e parametrização do limiar de calor de 25 °C a 40 °C.
+  - **RF03:** Filtro por ano no período disponível (2021–2025 no ERA5) e parametrização do limiar de calor de 20 °C a 40 °C.
   - **RF04:** Métricas de frequência, intensidade, noites tropicais e sequências de calor.
   - **RF05:** Comparação descritiva de internações com intervalo de confiança de 95%.
   - **RF06:** Interface amigável, cartões de síntese e suporte a relatório via CLI.
