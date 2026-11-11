@@ -25,8 +25,13 @@ from analise import (correlacao_calor_umidade, episodios_quentes, indicadores_di
                      indicadores_noturnos, perfil_horario, resumo_anual)
 from apoio import numero
 from saude import GRUPOS, RECORTES, carregar_internacoes, comparar_por_faixas, comparar_todos
+from sensores_locais import (MAPEAMENTO_PONTOS, carregar_sensor_local,
+                             obter_resumo_sensor, agregar_diario_sensor,
+                             conjunto_media_sensores)
+from gerenciador_fontes import (APIS_DISPONIVEIS, buscar_api_selecionada,
+                                interpretar_upload_arquivo)
 from arquitetura_projeto import (INTRODUCAO, REQUISICOES, ETL, FUNCIONAIS,
-    NAO_FUNCIONAIS, FUTURO, LIMITE, IMAGEM_ARQUITETURA)
+    NAO_FUNCIONAIS, FUTURO, LIMITE, IMAGEM_ARQUITETURA, DIAGRAMA_MERMAID)
 from dados import (ErroDados, FIM_ESTUDO, FUSO, INICIO_ESTUDO,
                    buscar_open_meteo, carregar_json, recortar_periodo)
 from interpretacao import (CONCLUSAO_LIMITES, FONTES_DETALHE, FONTES_RESUMO, GLOSSARIO,
@@ -34,7 +39,8 @@ from interpretacao import (CONCLUSAO_LIMITES, FONTES_DETALHE, FONTES_RESUMO, GLO
                            conclusoes, leitura_episodios, leitura_evolucao,
                            leitura_frequencia, leitura_horario, leitura_noite,
                            leitura_faixas, leitura_saude, leitura_umidade, SAUDE_COMO_LER, SAUDE_FONTE_DETALHE,
-                           SAUDE_INTRO, SAUDE_LIMITES, SAUDE_SEM_DADOS, SAUDE_TITULO)
+                           SAUDE_INTRO, SAUDE_LIMITES, SAUDE_SEM_DADOS, SAUDE_TITULO,
+                           limites_conclusao_dinamico, limites_saude_dinamico)
 
 # Arquivo com a série ERA5 já salva no computador (tem prioridade sobre a internet).
 BASE_LOCAL = Path(__file__).parent / "dados_locais" / "heliopolis_open_meteo.json"
@@ -122,24 +128,27 @@ def barras_agrupadas(dados, eixo_x, categorias, altura):
 
 
 def iniciar_base():
-    """Obtém a série de temperaturas e a guarda na sessão, sem expor operações de manutenção ao leitor.
+    """Obtém a série de temperaturas e a guarda na sessão.
 
-    A "sessão" (st.session_state) é a memória da página enquanto ela está aberta.
-    O caminho é este:
-      1. Se a série já está na sessão, só a recorta para o período do estudo (2021–2025).
-      2. Se não está e esta é a primeira tentativa, lê o arquivo salvo no computador
-         (dados_locais/heliopolis_open_meteo.json). Se o arquivo não existir, consulta a
-         internet. Em ambos os casos, recorta para o período do estudo.
-      3. Se algo der errado, a série é descartada e a mensagem de erro é guardada na sessão.
-    A tentativa inicial é marcada para que uma falha não se repita a cada filtro.
+    Padrão inicial do projeto:
+      1. Se a sessão já possui um conjunto, o mantém.
+      2. Por padrão, carrega a média dos 5 sensores locais de Heliópolis (UNAS).
+      3. Se não encontrar os arquivos dos sensores, carrega o cache ERA5 ou a API.
     """
     try:
         if "conjunto" in st.session_state:
-            st.session_state["conjunto"] = recortar_periodo(st.session_state["conjunto"])
+            return
         elif not st.session_state.get("carga_inicial_tentada"):
             st.session_state["carga_inicial_tentada"] = True
-            conjunto = carregar_json(BASE_LOCAL.read_bytes()) if BASE_LOCAL.is_file() else carregar_online(INICIO_ESTUDO, FIM_ESTUDO)
-            st.session_state["conjunto"] = recortar_periodo(conjunto)
+            try:
+                # Padrão: Média dos 5 sensores locais de Heliópolis
+                st.session_state["conjunto"] = conjunto_media_sensores()
+                st.session_state["periodo"] = "Todo o período"
+            except Exception:
+                if BASE_LOCAL.is_file():
+                    st.session_state["conjunto"] = recortar_periodo(carregar_json(BASE_LOCAL.read_bytes()))
+                else:
+                    st.session_state["conjunto"] = recortar_periodo(carregar_online(INICIO_ESTUDO, FIM_ESTUDO))
     except (ErroDados, OSError) as erro:
         st.session_state.pop("conjunto", None)
         st.session_state["erro_inicial"] = str(erro)
@@ -162,12 +171,241 @@ def recortar_base(conjunto, ano):
     return recortar_periodo(conjunto, datas.min().date(), datas.max().date())
 
 
-def mostrar_fontes():
-    """Explica de onde vêm os dados, em linguagem simples, antes de qualquer gráfico."""
+def mostrar_fontes_dinamica(conjunto):
+    """Explica de onde vêm os dados ativos, adaptando-se em tempo real à fonte selecionada."""
+    meta = conjunto.get("metadados", {})
+    fonte = meta.get("fonte", "Dados meteorológicos")
+    modelo = meta.get("modelo", "")
+    inicio = meta.get("inicio", "")
+    fim = meta.get("fim", "")
+    resolucao = meta.get("resolucao", "")
+
+    e_sensor_local = "Sensor" in fonte or "sensores" in modelo
+    e_upload = "Upload" in fonte
+    e_era5 = "ERA5" in fonte or "Open-Meteo" in fonte
+
     with st.container(border=True):
-        st.markdown(FONTES_RESUMO)
-        with st.expander("Saiba mais sobre a fonte e seus limites"):
-            st.markdown(FONTES_DETALHE)
+        if e_sensor_local:
+            st.markdown(
+                f"**Fonte ativa:** 📍 **{fonte}**\n\n"
+                f"- **Tipo de dado:** Medições físicas reais registradas por sensores/dataloggers instalados na comunidade.\n"
+                f"- **Período coberto:** {inicio} a {fim} (leituras originais a cada 10 minutos agrupadas em médias horárias).\n"
+                f"- **Variáveis:** Temperatura do ar e Umidade relativa medidas diretamente nos aparelhos fornecidos pelo **UNAS**.\n"
+                f"- **Natureza da análise:** Retrato concreto do microclima e das temperaturas sentidas nos pontos monitorados."
+            )
+        elif e_upload:
+            st.markdown(
+                f"**Fonte ativa:** 📂 **{fonte}**\n\n"
+                f"- **Tipo de dado:** Arquivo enviado pelo usuário ({meta.get('documentacao', 'Upload direto')}).\n"
+                f"- **Período coberto:** {inicio} a {fim}.\n"
+                f"- **Resolução:** {resolucao}."
+            )
+        else:
+            st.markdown(
+                f"**Fonte ativa:** 🌐 **{fonte}**\n\n"
+                f"- **Tipo de dado:** Reanálise atmosférica e modelagem numérica via Open-Meteo.\n"
+                f"- **Período:** {inicio} a {fim} · Resolução da grade espacial: {resolucao}.\n"
+                f"- **Localização consultada:** Coordenadas de referência de Heliópolis (Lat: {meta.get('latitude_solicitada', -23.615)}, Long: {meta.get('longitude_solicitada', -46.590)}).\n"
+                f"- **Natureza da análise:** Estimativa macroclimática regional contínua de longo prazo."
+            )
+
+
+def mostrar_seletor_origem_dados():
+    """Apresenta os três caminhos de origem de dados climáticos:
+
+    1. Locais Próximos (UNAS) — CSVs de dataloggers físicos instalados na comunidade
+    2. Upload de Arquivo — CSV, Excel ou JSON enviado pelo usuário
+    3. API Meteorológica Gratuita — Open-Meteo ERA5/ERA5-Land com opção de salvar cache local
+    """
+    fonte_atual = st.session_state.get("conjunto", {}).get("metadados", {}).get("fonte", "")
+    with st.container(border=True):
+        st.subheader("📡 Origem dos dados climáticos")
+        if fonte_atual:
+            st.caption(f"Fonte ativa no momento: **{fonte_atual}**")
+        else:
+            st.caption("Nenhuma fonte carregada ainda. Escolha uma das três opções abaixo:")
+
+        aba_sensores, aba_api, aba_upload = st.tabs([
+            "📍 Locais Próximos (Sensores UNAS)",
+            "🌐 API Meteorológica Gratuita",
+            "📂 Upload de Arquivo (CSV / Excel / JSON)",
+        ])
+
+        # ── ABA 1: Sensores Locais do UNAS ───────────────────────────────────
+        with aba_sensores:
+            st.markdown(
+                "Carrega as medições de **temperatura e umidade** registradas pelos sensores "
+                "(dataloggers) instalados em pontos da comunidade de Heliópolis, "
+                "fornecidos pelo **UNAS**. Leituras a cada 10 minutos."
+            )
+            st.caption(
+                "⚠️ Nota: estes são dados pontuais de locais específicos, "
+                "não uma cobertura completa do território."
+            )
+
+            OPCAO_MEDIA = "📊 Média de todos os locais"
+            opcoes_sensores = [OPCAO_MEDIA] + list(MAPEAMENTO_PONTOS.keys())
+            ponto = st.selectbox(
+                "Selecione o ponto de medição:",
+                opcoes_sensores,
+                key="seletor_sensor_local",
+            )
+
+            if ponto == OPCAO_MEDIA:
+                st.info(
+                    "Esta opção calcula a **média diária** de temperatura e umidade entre "
+                    "todos os locais com sensor, ponderando cada ponto igualmente. "
+                    "Dias em que apenas alguns sensores têm dado são incluídos com a média "
+                    "dos que estiverem disponíveis."
+                )
+            else:
+                info = MAPEAMENTO_PONTOS[ponto]
+                st.caption(f"📍 {info['descricao']} ({info['regiao']})")
+
+            if st.button("Carregar sensor local no painel", key="btn_sensor"):
+                try:
+                    if ponto == OPCAO_MEDIA:
+                        with st.spinner("Calculando média horária de todos os sensores..."):
+                            novo_conjunto = conjunto_media_sensores()
+                            st.session_state["conjunto"] = novo_conjunto
+                            st.session_state["periodo"] = "Todo o período"
+                        st.success("Média dos sensores carregada com sucesso!")
+                        st.rerun()
+                    else:
+                        info = MAPEAMENTO_PONTOS[ponto]
+                        with st.spinner(f"Carregando dados de {ponto}..."):
+                            novo_conjunto = interpretar_upload_arquivo(
+                                (Path(__file__).parent / "dados_saude" / "locaisproximos" / info["arquivo"]).read_bytes(),
+                                info["arquivo"],
+                            )
+                            novo_conjunto["metadados"]["fonte"] = f"Sensor Local UNAS: {ponto} ({info['descricao']})"
+                            st.session_state["conjunto"] = novo_conjunto
+                            st.session_state["periodo"] = "Todo o período"
+                        st.success(f"Sensor '{ponto}' carregado com sucesso!")
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"Erro ao carregar sensor: {e}")
+
+        # ── ABA 2: Upload de Arquivo ─────────────────────────────────────────
+        with aba_upload:
+            st.markdown(
+                "Envie qualquer arquivo com séries de temperatura e umidade: "
+                "exportações de dataloggers, planilhas do UNAS, ou dados de outras fontes."
+            )
+            st.caption(
+                "**Formatos aceitos:** CSV (separador `,` ou `;`, decimal `.` ou `,`), "
+                "Excel (`.xlsx` / `.xls`) e JSON (exportação do Open-Meteo ou deste painel). "
+                "O arquivo precisa conter ao menos uma coluna de **Data/Hora** e uma de **Temperatura**."
+            )
+            arquivo_enviado = st.file_uploader(
+                "Selecione o arquivo:",
+                type=["csv", "xlsx", "xls", "json"],
+                key="uploader_dados",
+            )
+            if arquivo_enviado is not None:
+                st.info(
+                    f"Arquivo selecionado: **{arquivo_enviado.name}** "
+                    f"({arquivo_enviado.size / 1024:.1f} KB). Clique no botão para processar."
+                )
+                if st.button("Processar e carregar arquivo no painel", key="btn_upload"):
+                    try:
+                        with st.spinner(f"Processando {arquivo_enviado.name}..."):
+                            novo_conjunto = interpretar_upload_arquivo(
+                                arquivo_enviado.getvalue(), arquivo_enviado.name
+                            )
+                            st.session_state["conjunto"] = novo_conjunto
+                            st.session_state["periodo"] = "Todo o período"
+                        st.success(f"Arquivo '{arquivo_enviado.name}' carregado!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao processar o arquivo: {e}")
+
+        # ── ABA 3: API Meteorológica ──────────────────────────────────────────
+        with aba_api:
+            st.markdown(
+                "Baixa dados climáticos de APIs públicas e gratuitas para a região de "
+                "Heliópolis, com melhor resolução e cobertura histórica. Requer **internet**."
+            )
+
+            # Se já existe base salva localmente, mostra opção de carregá-la sem internet
+            if BASE_LOCAL.is_file():
+                import json as _json
+                try:
+                    _meta = _json.loads(BASE_LOCAL.read_bytes()).get("metadados", {})
+                    _fonte = _meta.get("fonte", "desconhecida")
+                    _ini = _meta.get("inicio", "?")
+                    _fim = _meta.get("fim", "?")
+                    st.success(
+                        f"💾 Base local disponível: **{_fonte}** · {_ini} a {_fim}. "
+                        "Pode carregar sem internet:"
+                    )
+                    if st.button("Carregar base local salva (sem internet)", key="btn_local"):
+                        with st.spinner("Lendo arquivo local..."):
+                            st.session_state["conjunto"] = recortar_periodo(
+                                carregar_json(BASE_LOCAL.read_bytes())
+                            )
+                            st.session_state["periodo"] = "Todo o período"
+                        st.success("Base local carregada!")
+                        st.rerun()
+                    st.divider()
+                except Exception:
+                    pass
+
+            api_selecionada = st.selectbox(
+                "Modelo / API:",
+                list(APIS_DISPONIVEIS.keys()),
+                index=0,
+                key="seletor_api_gratuita",
+            )
+            info_api = APIS_DISPONIVEIS[api_selecionada]
+            st.caption(f"ℹ️ {info_api['descricao']} · Resolução: {info_api['resolucao']}")
+
+            c1, c2 = st.columns(2)
+            # Por padrão: do dia atual até 5 anos atrás
+            hoje_atual = date.today()
+            padrao_fim = hoje_atual
+            # Subtrai 5 anos exatos preservando bissextos
+            try:
+                padrao_inicio = hoje_atual.replace(year=hoje_atual.year - 5)
+            except ValueError:
+                padrao_inicio = hoje_atual - timedelta(days=5 * 365)
+
+            data_ini = c1.date_input(
+                "Data de início:", value=padrao_inicio,
+                min_value=date(1950, 1, 1), max_value=hoje_atual, key="api_inicio",
+            )
+            data_fim = c2.date_input(
+                "Data de fim:", value=padrao_fim,
+                min_value=date(1950, 1, 1), max_value=hoje_atual, key="api_fim",
+            )
+
+            salvar_local = st.checkbox(
+                "💾 Salvar os dados baixados localmente para uso offline futuro",
+                value=True, key="salvar_cache_api",
+            )
+
+            if st.button("Consultar API e carregar no painel", key="btn_api"):
+                if data_ini >= data_fim:
+                    st.error("A data de início deve ser anterior à data de fim.")
+                else:
+                    try:
+                        with st.spinner(f"Consultando {api_selecionada}… (pode levar até 60 s)"):
+                            from dados import exportar_json
+                            novo_conjunto = buscar_api_selecionada(
+                                api_selecionada, data_ini, data_fim
+                            )
+                            st.session_state["conjunto"] = novo_conjunto
+                            st.session_state["periodo"] = "Todo o período"
+                            if salvar_local:
+                                BASE_LOCAL.parent.mkdir(parents=True, exist_ok=True)
+                                BASE_LOCAL.write_bytes(exportar_json(novo_conjunto))
+                        st.success(
+                            f"Dados de {data_ini} a {data_fim} carregados via {api_selecionada}!"
+                            + (" Salvo localmente para uso offline." if salvar_local else "")
+                        )
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro na consulta à API: {e}")
 
 
 def mostrar_controles(original):
@@ -189,7 +427,13 @@ def mostrar_controles(original):
     with st.container(border=True):
         st.subheader(LIMIAR_TITULO)
         st.write(LIMIAR_TEXTO)
-        limiar = st.slider("Temperatura de referência para explorar o calor (°C)", 25.0, 40.0, 30.0, 0.5, key="limiar")
+        # Calcula um valor inicial sugerido coerente com a distribuição de temperatura da série
+        t_max_serie = float(original["horarios"]["temperatura_c"].max())
+        sugestao_limiar = 27.0 if t_max_serie <= 32.0 else 30.0
+        limiar = st.slider(
+            "Temperatura de referência para explorar o calor (°C)",
+            20.0, 40.0, sugestao_limiar, 0.5, key="limiar"
+        )
         st.markdown(f"Com o valor escolhido, um dia é contado como **quente** quando a "
                     f"temperatura máxima for de **{limiar:g} °C ou mais**.")
         muda, nao_muda = st.columns(2)
@@ -198,25 +442,31 @@ def mostrar_controles(original):
     return ano, limiar
 
 
-def mostrar_exposicao(diario, noites, episodios, limiar):
-    """Desenha os quatro cartões de resumo e os gráficos de intensidade e frequência do calor.
-
-    Recebe as tabelas já calculadas por analise.py: "diario" (uma linha por dia),
-    "noites" (uma linha por noite), "episodios" (sequências de calor) e o limiar escolhido.
-    """
-    # Primeiro conta quantos dias são válidos e quantos deles foram quentes.
+def mostrar_exposicao(diario, noites, episodios, limiar, nome_fonte=""):
+    """Desenha os quatro cartões de resumo e os gráficos de intensidade e frequência do calor."""
     validos = int(diario.dia_valido.sum())
     quentes = int(diario.dia_quente.sum()) if validos else float("nan")
-    # Os quatro cartões do topo. Quando não há dado, aparece um travessão (—), nunca zero.
     cartoes = st.columns(4)
     cartoes[0].metric("Maior temperatura horária", numero(diario.temp_max_c.max(), sufixo=" °C"))
     cartoes[1].metric(f"Dias com máxima ≥ {limiar:g} °C", numero(quentes, 0))
     cartoes[2].metric("Sequências de calor", numero(len(episodios) if validos else float("nan"), 0))
     cartoes[3].metric("Temperatura média noturna", numero(noites.temp_noturna_media_c.mean(), sufixo=" °C"))
-    st.caption(f"Contexto regional ERA5 · {validos:,} de {len(diario):,} dias válidos · "
+    
+    tipo_origem = "Sensores físicos locais" if "Sensor" in nome_fonte else "Contexto regional / API"
+    st.caption(f"{tipo_origem} · {validos:,} de {len(diario):,} dias válidos · "
                f"{int(noites.noite_valida.sum()):,} noites válidas · sequências de pelo menos três dias com máxima ≥ limiar.")
     if not validos:
         st.warning("Dados insuficientes para analisar a exposição diária neste período.")
+    e_sensor = "Sensor" in nome_fonte or "sensores" in nome_fonte.lower()
+    descricao_calor = (
+        "o microclima local medido pelos sensores" if e_sensor
+        else "a intensidade e a sazonalidade do calor regional"
+    )
+    descricao_freq = (
+        "Comparação descritiva entre os anos com dados disponíveis; poucos anos não estabelecem uma tendência climática."
+        if e_sensor
+        else "Comparação descritiva entre anos; cinco anos não estabelecem uma tendência climática."
+    )
     esquerda, direita = st.columns([2, 1])
     # Gráfico da esquerda: temperatura máxima, média e mínima ao longo do tempo.
     with esquerda, st.container(border=True, height="stretch"):
@@ -232,7 +482,7 @@ def mostrar_exposicao(diario, noites, episodios, limiar):
             ["#d94832", "#d99b25", "#287b9c"], 240, mensal=longo)
         st.caption(("Médias mensais das máximas, médias e mínimas diárias. " if longo else
                     "Máximas, médias e mínimas dos registros horários de cada dia. ") +
-                   "Permite explorar a intensidade e a sazonalidade do calor regional.")
+                   f"Permite explorar {descricao_calor}.")
         st.markdown("**O que isso significa:** " + leitura_evolucao(diario))
     # Gráfico da direita: porcentagem de dias quentes em cada ano (depende do limiar).
     with direita, st.container(border=True, height="stretch"):
@@ -241,7 +491,7 @@ def mostrar_exposicao(diario, noites, episodios, limiar):
         visual = anual[["dias_quentes_pct"]].rename(columns={"dias_quentes_pct": "Dias com calor (%)"})
         visual.index = visual.index.astype(str)
         st.bar_chart(visual, color="#dc8532", height=240)
-        st.caption("Percentual dos dias válidos com máxima ≥ limiar. Comparação descritiva entre anos; cinco anos não estabelecem uma tendência climática.")
+        st.caption(f"Percentual dos dias válidos com máxima ≥ limiar. {descricao_freq}")
         st.markdown("**O que isso significa:** " + leitura_frequencia(anual, limiar))
 
 
@@ -319,7 +569,7 @@ def carregar_saude():
     return carregar_internacoes()
 
 
-def mostrar_saude(diario, limiar):
+def mostrar_saude(diario, limiar, nome_fonte=""):
     """Seção "Calor e internações": compara os dias quentes com as internações da cidade de São Paulo.
 
     Usa os mesmos dias quentes do restante da página (período e limiar escolhidos acima).
@@ -338,7 +588,13 @@ def mostrar_saude(diario, limiar):
         st.markdown("**Internações nos dias quentes, comparadas ao esperado**")
         conclusivos = tabela[tabela.conclusivo]
         if conclusivos.empty:
-            st.info("Dias quentes insuficientes neste recorte para comparar.")
+            dias_quentes_contados = int(tabela["dias_quentes"].iloc[0]) if not tabela.empty else 0
+            st.info(
+                f"Dias quentes insuficientes neste recorte ({dias_quentes_contados} dia(s) com máxima ≥ {limiar:g} °C) "
+                f"para calcular a comparação estatística com intervalo de 95%. "
+                f"São necessários pelo menos 10 dias quentes — experimente reduzir o limiar térmico no controle acima "
+                f"(por exemplo, para 27 °C ou 28 °C)."
+            )
         else:
             # Um grupo de barras por faixa de idade, uma cor por doença, com o intervalo de 95% em cada barra.
             barras_agrupadas(dados_barras(conclusivos, "idade", "Idade"), "Idade", list(RECORTES), altura=420)
@@ -381,19 +637,85 @@ def mostrar_saude(diario, limiar):
         st.dataframe(mostra, hide_index=True, width="stretch", height="content")
     with st.expander("Como ler esta comparação"):
         st.markdown(SAUDE_COMO_LER)
-    st.info(SAUDE_LIMITES)
+    st.info(limites_saude_dinamico(nome_fonte))
     with st.expander("Fonte dos dados de saúde, filtros e privacidade"):
         st.markdown(SAUDE_FONTE_DETALHE)
 
 
-def mostrar_conclusoes(diario, noites, episodios, perfil, limiar, r, dias_correlacao):
+def mostrar_sensores_locais(limiar):
+    """Apresenta as medições dos sensores físicos (dataloggers) instalados em locais próximos de Heliópolis."""
+    st.subheader("Medições de sensores locais (Materiais UNAS)")
+    st.caption("Dados aferidos por aparelhos físicos (dataloggers) a cada 10 minutos em pontos e moradias próximas de Heliópolis.")
+    st.info("Nota metodológica importante: Estes dados representam medições pontuais de sensores físicos instalados em locais "
+            "específicos da comunidade (fornecidos pelo UNAS). Eles não cobrem a totalidade do território nem substituem "
+            "as séries meteorológicas de longo prazo, mas oferecem um retrato real e concreto do microclima experimentado nos locais.")
+
+    ponto_selecionado = st.selectbox(
+        "Selecione o ponto de medição local:",
+        list(MAPEAMENTO_PONTOS.keys()),
+        index=0,
+    )
+    info_ponto = MAPEAMENTO_PONTOS[ponto_selecionado]
+    st.caption(f"📍 **Referência informada:** {info_ponto['descricao']} ({info_ponto['regiao']})")
+
+    df_sensor = carregar_sensor_local(ponto_selecionado)
+    if df_sensor is None or df_sensor.empty:
+        st.warning("Não foi possível carregar as medições deste sensor local.")
+        return
+
+    resumo = obter_resumo_sensor(df_sensor)
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        st.metric("Total de leituras", f"{resumo['total_registros']:,}".replace(",", "."))
+    with c2:
+        st.metric("Temperatura máxima", f"{resumo['temp_max']:.1f} °C".replace(".", ","))
+    with c3:
+        st.metric("Temperatura média", f"{resumo['temp_media']:.1f} °C".replace(".", ","))
+    with c4:
+        st.metric("Umidade média", f"{resumo['umidade_media']:.1f} %".replace(".", ","))
+
+    # Agregação diária para gráfico limpo e intuitivo
+    df_diario = agregar_diario_sensor(df_sensor)
+    dias_quentes_sensor = int((df_diario["temp_max"] >= limiar).sum())
+    total_dias_sensor = len(df_diario)
+    pct_quentes = (dias_quentes_sensor / total_dias_sensor * 100) if total_dias_sensor else 0
+
+    st.markdown(f"Neste ponto, entre **{resumo['inicio'].strftime('%d/%m/%Y')}** e **{resumo['fim'].strftime('%d/%m/%Y')}**, "
+                f"foram registrados **{dias_quentes_sensor} dias** com pico térmico igual ou superior ao limiar selecionado ({limiar} °C) "
+                f"({pct_quentes:.1f}% dos dias monitorados).".replace(".", ","))
+
+    # Gráfico de evolução da temperatura diária medida no sensor
+    base_grafico = alt.Chart(df_diario).encode(x=alt.X("data:T", title="Data da medição"))
+    linha_max = base_grafico.mark_line(color="#e45756", size=2).encode(
+        y=alt.Y("temp_max:Q", title="Temperatura (°C)"),
+        tooltip=[alt.Tooltip("data:T", title="Data", format="%d/%m/%Y"),
+                 alt.Tooltip("temp_max:Q", title="Máxima (°C)", format=".1f"),
+                 alt.Tooltip("temp_media:Q", title="Média (°C)", format=".1f"),
+                 alt.Tooltip("temp_min:Q", title="Mínima (°C)", format=".1f")]
+    )
+    linha_media = base_grafico.mark_line(color="#f58518", strokeDash=[4, 4]).encode(
+        y="temp_media:Q"
+    )
+    linha_limiar = alt.Chart(pd.DataFrame({"y": [limiar]})).mark_rule(
+        color="#b22222", strokeDash=[6, 4]
+    ).encode(y="y:Q")
+
+    grafico_sensor = (linha_max + linha_media + linha_limiar).properties(
+        title=f"Histórico diário medido pelo sensor: {ponto_selecionado} (Vermelho: Máxima | Laranja tracejado: Média)",
+        width="container",
+        height=320,
+    )
+    st.altair_chart(grafico_sensor, width="stretch")
+
+
+def mostrar_conclusoes(diario, noites, episodios, perfil, limiar, r, dias_correlacao, nome_fonte=""):
     """Resume o que os gráficos mostram para o período e o limiar escolhidos, e o que eles não permitem concluir."""
     st.subheader("Conclusões")
     st.caption("Resumo em linguagem simples do período e do limiar escolhidos acima. "
                "O texto muda quando você altera esses controles.")
     for item in conclusoes(diario, noites, episodios, perfil, limiar, r, dias_correlacao):
         st.markdown(f"- {item}")
-    st.info(CONCLUSAO_LIMITES)
+    st.info(limites_conclusao_dinamico(nome_fonte))
 
 
 def mostrar_glossario():
@@ -403,11 +725,19 @@ def mostrar_glossario():
             st.markdown(f"**{termo}.** {explicacao}")
 
 
+def renderizar_mermaid(codigo_mermaid: str):
+    """Renderiza um diagrama Mermaid usando st.mermaid_chart (nativo do Streamlit 1.67+)."""
+    st.mermaid_chart(codigo_mermaid, width="stretch")
+
+
 def mostrar_arquitetura():
     """Apresenta os requisitos e o fluxo técnico, no final da página, depois das análises do estudo."""
     st.subheader("Engenharia de software e arquitetura")
     st.write(INTRODUCAO)
-    st.image(str(IMAGEM_ARQUITETURA), caption="Arquitetura implementada: API REST externa, ETL em memória e apresentação no Streamlit.")
+    
+    renderizar_mermaid(DIAGRAMA_MERMAID)
+    st.caption("Diagrama de arquitetura de software renderizado via Mermaid (Pipeline: 3 fontes de entrada, ETL e SIH/SUS).")
+    
     st.write(REQUISICOES)
     st.write(ETL)
     funcionais, qualidade = st.columns(2)
@@ -428,22 +758,43 @@ def main():
     st.set_page_config(page_title="Heliópolis | Estresse térmico", page_icon="☀️", layout="wide")
     st.title("Heliópolis · Estresse térmico")
     st.write("Análise exploratória da exposição ao calor para o estudo da saúde e da qualidade de vida dos moradores.")
-    st.caption("2021–2025 · Contexto ambiental regional de Heliópolis")
-    st.caption("Quer saber como o sistema foi construído? A seção \"Engenharia de software e arquitetura\" está no final da página.")
-    st.info("Análise preliminar: as medições do Observatório De Olho na Quebrada não estão disponíveis para o projeto. "
-            "Sem essa base e sem dados de saúde ou qualidade de vida do próprio bairro, os resultados descrevem "
-            "o calor regional; não medem impactos nos moradores nem temperaturas dentro das moradias. "
-            "Os únicos dados de saúde usados são internações da cidade de São Paulo inteira (seção \"Calor e internações\").")
-    mostrar_fontes()
-    # Obtém a série de temperaturas (do arquivo salvo ou da internet).
+
+    # Inicia a base (padrão: média dos sensores locais UNAS)
     iniciar_base()
+
+    conjunto_atual = st.session_state.get("conjunto")
+    fonte_nome = conjunto_atual.get("metadados", {}).get("fonte", "Heliópolis") if conjunto_atual else "Heliópolis"
+    e_sensor = "Sensor" in fonte_nome or "sensores" in conjunto_atual.get("metadados", {}).get("modelo", "") if conjunto_atual else False
+
+    if e_sensor:
+        st.caption(f"📍 Dados Ativos: **{fonte_nome}** · Medições diretas de Dataloggers UNAS")
+        st.info("💡 **Atenção:** Estes dados são medições físicas registradas diretamente por sensores instalados "
+                "em moradias e pontos de Heliópolis (materiais da parceria com o UNAS). "
+                "Os dados de saúde correspondem aos registros do SUS da capital paulista.")
+    else:
+        st.caption(f"🌐 Dados Ativos: **{fonte_nome}** · Contexto macroclimático regional")
+        st.info("💡 **Nota metodológica:** Estes dados correspondem a estimativas de reanálise atmosférica regional (Open-Meteo). "
+                "Para visualizar medições in loco dentro de Heliópolis, selecione a aba 'Locais Próximos (Sensores UNAS)' abaixo.")
+
+    # Seletor de origem para alternar a qualquer momento
+    mostrar_seletor_origem_dados()
+
     if "conjunto" not in st.session_state:
-        st.error("A série ambiental está indisponível. Não é possível apresentar a análise neste momento.")
+        st.warning(
+            "⬆️ Nenhuma fonte de dados carregada ainda. "
+            "Use o seletor acima para escolher entre **Sensores Locais (UNAS)**, "
+            "**Upload de Arquivo** ou **API Meteorológica**."
+        )
         return
+
     original = st.session_state["conjunto"]
     # Período e limiar escolhidos pelo usuário.
     ano, limiar = mostrar_controles(original)
-    # A partir daqui, tudo é recalculado com essas duas escolhas.
+    
+    # Bloco explicativo dinâmico da fonte ativa
+    mostrar_fontes_dinamica(original)
+
+    # A partir daqui, tudo é recalculado com essas escolhas.
     conjunto = recortar_base(original, ano)
     horarios = conjunto["horarios"]
     # Resultados por dia, por noite e por sequência de calor (contas em analise.py).
@@ -456,17 +807,19 @@ def main():
     inicio = date.fromisoformat(conjunto["metadados"]["inicio"]).strftime("%d/%m/%Y")
     fim = date.fromisoformat(conjunto["metadados"]["fim"]).strftime("%d/%m/%Y")
     st.caption(f"{inicio} a {fim} · A referência selecionada é um limiar analítico, não um limite de risco à saúde.")
-    mostrar_exposicao(diario, noites, episodios, limiar)
+    mostrar_exposicao(diario, noites, episodios, limiar, nome_fonte=fonte_nome)
     mostrar_rotina(perfil, diario, noites, r, dias_correlacao)
     with st.expander("Explorar sequências de calor persistente"):
         mostrar_persistencia(episodios, limiar)
-    mostrar_saude(diario, limiar)
-    mostrar_conclusoes(diario, noites, episodios, perfil, limiar, r, dias_correlacao)
+    mostrar_saude(diario, limiar, nome_fonte=fonte_nome)
+    mostrar_conclusoes(diario, noites, episodios, perfil, limiar, r, dias_correlacao, nome_fonte=fonte_nome)
     mostrar_glossario()
-    st.caption("Leitura dos resultados: dias e noites exigem pelo menos 90% das horas de temperatura; "
-               "noites parciais são excluídas. Máximas vêm de amostras horárias. Lacunas permanecem ausentes. "
-               "ERA5 representa uma grade regional (~25 km), não medições dentro de Heliópolis.")
-    st.caption("Fonte meteorológica: [Open-Meteo / Copernicus ERA5](https://open-meteo.com/en/docs/historical-weather-api).")
+    
+    if e_sensor:
+        st.caption("Leitura dos resultados: Medições físicas locais a cada 10 minutos (agrupadas em médias horárias). "
+                   "Reflete o microclima experimentado nos pontos de medição em Heliópolis.")
+    else:
+        st.caption("Leitura dos resultados: Estimativa macroclimática regional via Open-Meteo (~9 km a 25 km de resolução).")
     mostrar_arquitetura()
 
 

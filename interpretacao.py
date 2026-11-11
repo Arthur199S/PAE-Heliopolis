@@ -154,9 +154,41 @@ CONCLUSAO_LIMITES = (
     "urgência e da atenção primária, nos mesmos dias."
 )
 
-# ---------------------------------------------------------------------------
-# 1b. TEXTOS FIXOS DA SEÇÃO DE INTERNAÇÕES
-# ---------------------------------------------------------------------------
+def limites_conclusao_dinamico(fonte_nome=""):
+    """Gera o texto de limites de forma dinâmica dependendo da fonte ativa."""
+    e_sensor = "Sensor" in fonte_nome or "sensores" in fonte_nome.lower()
+    if e_sensor:
+        return (
+            "**O que estes resultados mostram e o que não permitem concluir:**\n"
+            "- Os dados de temperatura refletem medições reais dos **sensores físicos locais (UNAS)** nos pontos monitorados em Heliópolis.\n"
+            "- A seção de internações utiliza dados do **SUS da cidade de São Paulo como referência epidemiológica macro**, pois não há série diária de internações exclusiva de Heliópolis.\n"
+            "- Os gráficos de temperatura física indicam as condições microclimáticas das moradias e ruas, mas não medem prontuários individuais ou qualidade de sono.\n"
+            "- A correlação entre calor e umidade descreve o comportamento físico do microclima local, não uma relação de causa e efeito na saúde.\n"
+            "- Para aprofundar o estudo, o próximo passo sugerido pela comunidade é o cruzamento com dados de atendimento ambulatorial nas UBSs/AMAs da região."
+        )
+    return (
+        "**O que estes resultados não permitem concluir:**\n"
+        "- Os dados de temperatura descrevem o calor da **região (ERA5 / satélite)**, e não a temperatura dentro das casas de Heliópolis.\n"
+        "- Os gráficos de temperatura não medem sintomas, sono ou qualquer outro efeito na saúde das pessoas.\n"
+        "- A seção de internações usa dados da **cidade inteira** e apenas do SUS. Ela não mostra o que acontece exclusivamente com os moradores de Heliópolis e não prova causa e efeito.\n"
+        "- Séries curtas mostram o que aconteceu no recorte, mas não bastam para afirmar tendência climática de longo prazo.\n"
+        "- A correlação entre calor e umidade descreve um padrão do tempo, e não uma causa."
+    )
+
+
+def limites_saude_dinamico(fonte_nome=""):
+    """Gera o texto de limites da seção de internações de acordo com a fonte de calor usada."""
+    e_sensor = "Sensor" in fonte_nome or "sensores" in fonte_nome.lower()
+    termo_clima = "dos **sensores físicos locais do UNAS** (microclima de Heliópolis)" if e_sensor else "da **região macro (ERA5)**"
+    return (
+        "**Limites desta comparação:**\n"
+        "- Só entram internações pagas pelo **SUS**, e apenas casos graves o bastante para internar. "
+        "Atendimentos em UBS e UPA que não internaram, hospitais particulares e sintomas leves ficam de fora.\n"
+        f"- O calor utilizado para definir os dias quentes é proveniente {termo_clima}.\n"
+        "- Os dados de saúde abrangem o município de São Paulo (SIH/SUS) para garantir significância estatística, evitando distorções amostrais do território reduzido.\n"
+        "- A data usada é a da **internação**, e não a do início dos sintomas.\n"
+        "- É uma **associação**, e não uma relação direta de causa e efeito."
+    )
 
 SAUDE_TITULO = "Calor e internações hospitalares (cidade de São Paulo)"
 
